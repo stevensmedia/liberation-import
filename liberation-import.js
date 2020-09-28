@@ -4,6 +4,16 @@ const glob = require('glob');
 
 function processArticle(html) {
 	var $ = cheerio.load(html);
+	var text = '';
+	$('section[class="yaqOZd"]').find('p').each(function(i, el) {
+		var t = $(el).text();
+		if(typeof t == 'string' &&
+		   t != '[Email]') {
+			text += t;
+			text += "\n\n";
+		}
+	});
+	return text;
 }
 
 function getFiles(globstr) {
