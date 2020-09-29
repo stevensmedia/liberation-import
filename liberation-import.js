@@ -2,6 +2,15 @@ const cheerio = require('cheerio');
 const fs = require('fs').promises;
 const glob = require('glob');
 
+function createDocument(str) {
+	var $ = cheerio.load('<html><body></body></html>');
+	var lines = str.split('\n\n');
+	lines.forEach(function(line) {
+		$('body').append($('<p></p>').text(line));
+	});
+	return $('body').html();
+}
+
 function processArticle(html) {
 	var $ = cheerio.load(html);
 	var text = '';
@@ -39,6 +48,7 @@ async function main() {
 	}
 
 	files.forEach(async function(file) {
+		var name = file.replace(/\.html$/, '');
 		var html = false;
 		try {
 			html = await fs.readFile(file);
@@ -48,9 +58,16 @@ async function main() {
 		}
 
 		try {
-			var processed = await processArticle(html);
+			var processed = processArticle(html);
 		} catch(e) {
 			console.log(`Error processing file ${file}: ${e}`);
+			return;
+		}
+
+		try {
+			var doc = createDocument(processed);
+		} catch(e) {
+			console.log(`Error creating document for file ${file}: ${e}`);
 			return;
 		}
 	});
