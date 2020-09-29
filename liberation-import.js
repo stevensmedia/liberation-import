@@ -1,6 +1,8 @@
 const cheerio = require('cheerio');
+const child_process = require('child_process');
 const fs = require('fs').promises;
 const glob = require('glob');
+const path = require('path');
 
 function createDocument(str) {
 	var $ = cheerio.load('<html><body></body></html>');
@@ -37,8 +39,55 @@ function getFiles(globstr) {
 	});
 }
 
+async function createPage(doc, title, wp, ssh) {
+	return new Promise(function(resolve, reject) {
+		var opts = {
+			stdio: 'pipe',
+		};
+		var args = [
+			'--post_author=1',
+			`--post_title=${title}`,
+			'--post_status=publish',
+			'--post_type=page',
+			`--ssh=${ssh}`,
+			'post',
+			'create',
+			'-',
+		];
+		wpcli = child_process.spawn(wp, args, opts);
+
+		var dataHandler = function(data) {
+			console.log(data.toString('utf-8'));
+		};
+		wpcli.stdout.on('data', dataHandler);
+		wpcli.stderr.on('data', dataHandler);
+
+		var exitHandler = function(code, signal) {
+			if(code) {
+				reject(`wp-cli returned code ${code} and/or signal ${signal} for ${title}`);
+			} else {
+				resolve();
+			}
+		};
+		wpcli.on('exit', exitHandler);
+		wpcli.on('close', exitHandler);
+
+		wpcli.on('disconnect', function() {
+			console.log(`wp-cli disconnected for ${title}`);
+		});
+		wpcli.on('error', function(error) {
+			reject(`wp-cli error ${code} for ${title}`);
+		});
+
+		wpcli.stdin.write(Buffer.from(doc, 'utf8'));
+		wpcli.stdin.end();
+	});
+}
+
 async function main() {
-	var target = process.argv.slice(-1)[0];
+	var target = process.argv.slice(-3)[0];
+	var wp = process.argv.slice(-2)[0];
+	var ssh = process.argv.slice(-1)[0];
 
 	try {
 		var files = await getFiles(target);
@@ -48,7 +97,7 @@ async function main() {
 	}
 
 	files.forEach(async function(file) {
-		var name = file.replace(/\.html$/, '');
+		var name = path.basename(file, '.html');
 		var html = false;
 		try {
 			html = await fs.readFile(file);
@@ -68,6 +117,14 @@ async function main() {
 			var doc = createDocument(processed);
 		} catch(e) {
 			console.log(`Error creating document for file ${file}: ${e}`);
+			return;
+		}
+
+		try {
+			await createPage(doc, name, wp, ssh);
+			console.log(`Done with ${file}`);
+		} catch(e) {
+			console.log(`Error creating post for file ${file}: ${e}`);
 			return;
 		}
 	});
